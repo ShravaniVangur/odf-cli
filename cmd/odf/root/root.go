@@ -22,6 +22,7 @@ import (
 var (
 	KubeConfig              string
 	KubeContext             string
+	ConsumerContext         string
 	OperatorNamespace       string
 	StorageClusterNamespace string
 	ClientSets              *k8sutil.Clientsets
@@ -67,6 +68,7 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&OperatorNamespace, "operator-namespace", "", "Openshift namespace where the ODF operator is running")
 	RootCmd.PersistentFlags().StringVarP(&StorageClusterNamespace, "namespace", "n", "openshift-storage", "Openshift namespace where the StorageCluster CR is created")
 	RootCmd.PersistentFlags().StringVar(&KubeContext, "context", "", "Openshift context to use")
+	RootCmd.PersistentFlags().StringVar(&ConsumerContext, "consumer-context", "", "Kubernetes context for PV and VolumeSnapshotContent lookups (defaults to current context)")
 }
 
 func isBenchmarkCommand(cmd *cobra.Command) bool {
@@ -109,6 +111,31 @@ func getClientsets(cmd *cobra.Command) *k8sutil.Clientsets {
 	if err != nil {
 		logging.Fatal(err)
 	}
+
+	// Initialize consumer context clients
+	if ConsumerContext == "" {
+		clientsets.ConsumerConfig = clientsets.KubeConfig
+		clientsets.ConsumerKube = clientsets.Kube
+	} else {
+		consumerLoadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+		consumerOverrides := &clientcmd.ConfigOverrides{CurrentContext: ConsumerContext}
+		consumerClientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+			consumerLoadingRules,
+			consumerOverrides,
+		)
+
+		var err error
+		clientsets.ConsumerConfig, err = consumerClientConfig.ClientConfig()
+		if err != nil {
+			logging.Fatal(fmt.Errorf("failed to build config for --consumer-context %q: %v", ConsumerContext, err))
+		}
+
+		clientsets.ConsumerKube, err = k8s.NewForConfig(clientsets.ConsumerConfig)
+		if err != nil {
+			logging.Fatal(fmt.Errorf("failed to build kube client for --consumer-context %q: %v", ConsumerContext, err))
+		}
+	}
+
 	if !isBenchmarkCommand(cmd) {
 		preValidationCheck(ctx, clientsets, OperatorNamespace, StorageClusterNamespace)
 	}
