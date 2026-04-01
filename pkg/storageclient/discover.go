@@ -2,6 +2,7 @@ package storageclient
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -109,6 +110,46 @@ func getCephFSConfig(ctx context.Context, clusterID, namespace string) (*csiConf
 	return nil, fmt.Errorf("no matching clusterID '%s' found in ceph-csi-config", clusterID)
 }
 
+// getCephCredentials queries the secret and extracts userID and userKey
+func getCephCredentials(ctx context.Context, secretName, secretNamespace string) (userID, userKey string, err error) {
+	output, err := runKubectl(ctx, "get", "secret", secretName, "-n", secretNamespace, "-o", "json")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get secret '%s' in namespace '%s': %v", secretName, secretNamespace, err)
+	}
+
+	var secret struct {
+		Data map[string]string `json:"data"`
+	}
+
+	if err := json.Unmarshal(output, &secret); err != nil {
+		return "", "", fmt.Errorf("failed to parse secret JSON: %v", err)
+	}
+
+	// Extract and decode userID
+	userIDEncoded, ok := secret.Data["userID"]
+	if !ok {
+		return "", "", fmt.Errorf("secret '%s' missing required field: userID", secretName)
+	}
+	userIDBytes, err := base64.StdEncoding.DecodeString(userIDEncoded)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to decode userID from secret '%s': %v", secretName, err)
+	}
+	userID = string(userIDBytes)
+
+	// Extract and decode userKey
+	userKeyEncoded, ok := secret.Data["userKey"]
+	if !ok {
+		return "", "", fmt.Errorf("secret '%s' missing required field: userKey", secretName)
+	}
+	userKeyBytes, err := base64.StdEncoding.DecodeString(userKeyEncoded)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to decode userKey from secret '%s': %v", secretName, err)
+	}
+	userKey = string(userKeyBytes)
+
+	return userID, userKey, nil
+}
+
 // Discover queries Kubernetes resources to auto-discover CephFS configuration
 // from a StorageClient resource.
 func Discover(ctx context.Context, storageClientName, namespace string) (*DiscoveredConfig, error) {
@@ -133,7 +174,16 @@ func Discover(ctx context.Context, storageClientName, namespace string) (*Discov
 		config.MonitorIP = cephFSConfig.Monitors[0]
 	}
 
-	// Remaining steps will be implemented in subsequent tasks
-	_ = cephFSConfig.CephFS.ControllerPublishSecretRef // Will use this in next task
+	// Step 3: Get credentials from Secret
+	secretName := cephFSConfig.CephFS.ControllerPublishSecretRef.Name
+	secretNamespace := cephFSConfig.CephFS.ControllerPublishSecretRef.Namespace
+	userID, userKey, err := getCephCredentials(ctx, secretName, secretNamespace)
+	if err != nil {
+		return nil, err
+	}
+	config.UserID = userID
+	config.UserKey = userKey
+
+	// Remaining steps will be implemented in next task
 	return config, fmt.Errorf("not fully implemented yet")
 }

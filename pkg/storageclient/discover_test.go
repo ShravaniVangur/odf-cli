@@ -1,6 +1,7 @@
 package storageclient
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 )
@@ -155,4 +156,127 @@ func TestCsiConfigEntryEmptySubvolumeGroup(t *testing.T) {
 	}
 
 	// The empty SubvolumeGroup was correctly parsed
+}
+
+// TestSecretStructureParsing tests parsing the Secret structure and base64 decoding
+func TestSecretStructureParsing(t *testing.T) {
+	// Sample Secret JSON with base64-encoded values
+	// userID: "csi-cephfs-node" (base64: Y3NpLWNlcGhmcy1ub2Rl)
+	// userKey: "AQD1234567890abcdef==" (base64: QVFEMTIzNDU2Nzg5MGFiY2RlZj09)
+	sampleSecret := `{
+		"apiVersion": "v1",
+		"kind": "Secret",
+		"metadata": {
+			"name": "rook-csi-cephfs-provisioner",
+			"namespace": "openshift-storage"
+		},
+		"type": "Opaque",
+		"data": {
+			"userID": "Y3NpLWNlcGhmcy1ub2Rl",
+			"userKey": "QVFEMTIzNDU2Nzg5MGFiY2RlZj09"
+		}
+	}`
+
+	var secret struct {
+		Data map[string]string `json:"data"`
+	}
+
+	err := json.Unmarshal([]byte(sampleSecret), &secret)
+	if err != nil {
+		t.Fatalf("Failed to parse Secret JSON: %v", err)
+	}
+
+	// Verify we have the data fields
+	if len(secret.Data) != 2 {
+		t.Errorf("Expected 2 data fields, got %d", len(secret.Data))
+	}
+
+	// Test userID decode
+	userIDEncoded, ok := secret.Data["userID"]
+	if !ok {
+		t.Fatal("Expected userID field in secret data")
+	}
+	userIDBytes, err := base64.StdEncoding.DecodeString(userIDEncoded)
+	if err != nil {
+		t.Fatalf("Failed to decode userID: %v", err)
+	}
+	userID := string(userIDBytes)
+	if userID != "csi-cephfs-node" {
+		t.Errorf("Expected userID 'csi-cephfs-node', got '%s'", userID)
+	}
+
+	// Test userKey decode
+	userKeyEncoded, ok := secret.Data["userKey"]
+	if !ok {
+		t.Fatal("Expected userKey field in secret data")
+	}
+	userKeyBytes, err := base64.StdEncoding.DecodeString(userKeyEncoded)
+	if err != nil {
+		t.Fatalf("Failed to decode userKey: %v", err)
+	}
+	userKey := string(userKeyBytes)
+	if userKey != "AQD1234567890abcdef==" {
+		t.Errorf("Expected userKey 'AQD1234567890abcdef==', got '%s'", userKey)
+	}
+}
+
+// TestSecretMissingFields tests handling of secrets missing required fields
+func TestSecretMissingFields(t *testing.T) {
+	tests := []struct {
+		name       string
+		secretJSON string
+		wantError  bool
+	}{
+		{
+			name: "missing userID",
+			secretJSON: `{
+				"data": {
+					"userKey": "QVFEMTIzNDU2Nzg5MGFiY2RlZj09"
+				}
+			}`,
+			wantError: true,
+		},
+		{
+			name: "missing userKey",
+			secretJSON: `{
+				"data": {
+					"userID": "Y3NpLWNlcGhmcy1ub2Rl"
+				}
+			}`,
+			wantError: true,
+		},
+		{
+			name: "both fields present",
+			secretJSON: `{
+				"data": {
+					"userID": "Y3NpLWNlcGhmcy1ub2Rl",
+					"userKey": "QVFEMTIzNDU2Nzg5MGFiY2RlZj09"
+				}
+			}`,
+			wantError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var secret struct {
+				Data map[string]string `json:"data"`
+			}
+
+			err := json.Unmarshal([]byte(tt.secretJSON), &secret)
+			if err != nil {
+				t.Fatalf("Failed to parse Secret JSON: %v", err)
+			}
+
+			// Check for userID
+			_, hasUserID := secret.Data["userID"]
+			_, hasUserKey := secret.Data["userKey"]
+
+			gotError := !hasUserID || !hasUserKey
+			if gotError != tt.wantError {
+				t.Errorf("Expected error=%v, got error=%v (hasUserID=%v, hasUserKey=%v)",
+					tt.wantError, gotError, hasUserID, hasUserKey)
+			}
+		})
+	}
 }
