@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/red-hat-storage/odf-cli/cmd/odf/benchmark"
 	"github.com/red-hat-storage/odf-cli/cmd/odf/ceph"
+	"github.com/red-hat-storage/odf-cli/cmd/odf/cephfs-snap"
 	"github.com/red-hat-storage/odf-cli/cmd/odf/dr"
 	"github.com/red-hat-storage/odf-cli/cmd/odf/get"
 	"github.com/red-hat-storage/odf-cli/cmd/odf/maintenance"
@@ -31,6 +32,7 @@ func addcommands() {
 		get.GetCmd,
 		purgeosd.CephPurgeOsdCmd,
 		subvolume.SubvolumeCmd,
+		cephfs_snap.CephFSSnapCmd,
 		maintenance.MaintenanceCmd,
 		multus.MultusCmd,
 		operator.OperatorCmd,

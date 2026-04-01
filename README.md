@@ -25,6 +25,9 @@ The ODF CLI tool provides configuration and troubleshooting commands for OpenShi
 - `odf subvolume`:
   - `ls`: Display all the subvolumes
   - `delete <subvolume> <filesystem> <subvolumegroup>`: Deletes the stale subvolumes
+- `odf cephfs-snap`:
+  - `ls`: Display all CephFS snapshots with their status (bound/orphaned)
+  - `delete <subvolume> <snapshot>`: Delete orphaned CephFS snapshots
 - `odf operator`:
   - `rook`:
     - `set`: Set the property in the rook-ceph-operator-config configmap.
@@ -64,6 +67,8 @@ Visit docs below for complete details about each command and their flags uses.
 - [rados](docs/ceph.md#rados)
 - [radosgw-admin](docs/ceph.md#radosgw-admin)
 - [dr](docs/dr.md)
+- [cephfs-snap](docs/cephfs-snapshots.md)
+- [subvolume](docs/subvolume.md)
 
 ### Root args
 
