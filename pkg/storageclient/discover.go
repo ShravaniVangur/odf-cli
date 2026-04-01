@@ -150,6 +150,45 @@ func getCephCredentials(ctx context.Context, secretName, secretNamespace string)
 	return userID, userKey, nil
 }
 
+// getCephFSControllerPod finds a running CephFS controller pod
+func getCephFSControllerPod(ctx context.Context, namespace string) (podName, podNamespace string, err error) {
+	output, err := runKubectl(ctx, "get", "pods", "-n", namespace,
+		"-l", "app=openshift-storage.cephfs.csi.ceph.com-ctrlplugin",
+		"-o", "json")
+	if err != nil {
+		return "", "", fmt.Errorf("no CephFS controller pods found with label app=openshift-storage.cephfs.csi.ceph.com-ctrlplugin in namespace '%s': %v", namespace, err)
+	}
+
+	var podList struct {
+		Items []struct {
+			Metadata struct {
+				Name      string `json:"name"`
+				Namespace string `json:"namespace"`
+			} `json:"metadata"`
+			Status struct {
+				Phase string `json:"phase"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+
+	if err := json.Unmarshal(output, &podList); err != nil {
+		return "", "", fmt.Errorf("failed to parse pods JSON: %v", err)
+	}
+
+	if len(podList.Items) == 0 {
+		return "", "", fmt.Errorf("no CephFS controller pods found with label app=openshift-storage.cephfs.csi.ceph.com-ctrlplugin in namespace '%s'", namespace)
+	}
+
+	// Find first Running pod
+	for _, pod := range podList.Items {
+		if pod.Status.Phase == "Running" {
+			return pod.Metadata.Name, pod.Metadata.Namespace, nil
+		}
+	}
+
+	return "", "", fmt.Errorf("found %d CephFS controller pod(s) but none are running", len(podList.Items))
+}
+
 // Discover queries Kubernetes resources to auto-discover CephFS configuration
 // from a StorageClient resource.
 func Discover(ctx context.Context, storageClientName, namespace string) (*DiscoveredConfig, error) {
@@ -184,6 +223,14 @@ func Discover(ctx context.Context, storageClientName, namespace string) (*Discov
 	config.UserID = userID
 	config.UserKey = userKey
 
-	// Remaining steps will be implemented in next task
-	return config, fmt.Errorf("not fully implemented yet")
+	// Step 4: Find CephFS controller pod
+	podName, podNamespace, err := getCephFSControllerPod(ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+	config.PodName = podName
+	config.PodNamespace = podNamespace
+	config.PodContainer = "csi-cephfsplugin"
+
+	return config, nil
 }
